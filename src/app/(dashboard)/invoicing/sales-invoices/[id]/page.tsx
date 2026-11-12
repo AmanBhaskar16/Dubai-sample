@@ -15,7 +15,7 @@ import { DataTable } from '@/components/shared/DataTable';
 import { LineItemGrid, LineItemRow, calculateLineSummary } from '@/components/invoicing/LineItemGrid';
 import { CurrencySelect } from '@/components/ui/currency-select';
 import api from '@/lib/api';
-import { InvoiceStatus, Payment, PaymentMethod, SalesInvoice } from '@/types';
+import { InvoiceCreditNoteSummary, InvoicePaymentAllocation, InvoiceStatus, Payment, PaymentMethod, SalesInvoice } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { showApiError, showApiSuccess } from '@/lib/apiError';
 import toast from 'react-hot-toast';
@@ -219,14 +219,35 @@ export default function SalesInvoiceDetailPage() {
     }
   };
 
-  const downloadPdf = async () => {
+  const downloadPdf = async (mode: 'open' | 'download' = 'open') => {
     if (!invoice) return;
     try {
-      const res = await api.get(`/invoices/${invoice.id}/pdf`, { params: { printFormatId: printFormatId || undefined }, responseType: 'blob' });
-      const url = window.URL.createObjectURL(res.data);
-      window.open(url, '_blank');
-    } catch {
-      toast.error('Failed to open invoice PDF');
+      const res = await api.get(`/invoices/${invoice.id}/pdf`, { params: { printFormatId: printFormatId || undefined, download: mode === 'download' ? 'true' : undefined }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      if (mode === 'download') {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${invoice.invoiceNo}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } else {
+        window.open(url, '_blank');
+      }
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    } catch (err: any) {
+      // Error bodies arrive as Blob because of responseType; decode to show the server message.
+      const blob = err?.response?.data;
+      if (blob instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await blob.text());
+          toast.error(parsed?.message || 'Failed to generate invoice PDF');
+          return;
+        } catch {
+          // fall through to the generic handler
+        }
+      }
+      showApiError(err, 'Failed to generate invoice PDF');
     }
   };
 
@@ -235,7 +256,11 @@ export default function SalesInvoiceDetailPage() {
   }
 
   const payments = invoice.payments || [];
-  const allocations = (invoice as any).paymentAllocations || [];
+  const allocations: InvoicePaymentAllocation[] = invoice.paymentAllocations || [];
+  const creditNotes: InvoiceCreditNoteSummary[] = invoice.creditNotes || [];
+  const canReceivePayment = ['SUBMITTED', 'PARTIAL'].includes(invoice.status) && outstanding > 0.005;
+  const canCancel = invoice.status === 'DRAFT' || invoice.status === 'SUBMITTED';
+  const amendedToId = invoice.amendedToId;
 
   return (
     <div className={isCancelled(invoice.status) ? 'opacity-75' : ''}>
@@ -249,6 +274,16 @@ export default function SalesInvoiceDetailPage() {
             <h1 className={isCancelled(invoice.status) ? 'text-xl font-semibold text-[#1f2937] line-through' : 'text-xl font-semibold text-[#1f2937]'}>{invoice.invoiceNo}</h1>
             <StatusBadge status={invoice.status} />
           </div>
+          {invoice.amendedFromId && (
+            <Link href={`/invoicing/sales-invoices/${invoice.amendedFromId}`} className="mt-1 mr-3 inline-flex text-sm text-[#1674c4] hover:underline">
+              Amended from cancelled invoice
+            </Link>
+          )}
+          {invoice.deliveryNoteId && (
+            <Link href="/invoicing/delivery-notes" className="mt-1 mr-3 inline-flex text-sm text-[#1674c4] hover:underline">
+              Created from delivery note
+            </Link>
+          )}
           {invoice.salesOrderId && (
             <Link href={`/sales/orders/${invoice.salesOrderId}`} className="mt-1 inline-flex text-sm text-[#1674c4] hover:underline">
               Created from Sales Order
@@ -256,20 +291,27 @@ export default function SalesInvoiceDetailPage() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={downloadPdf}><Download className="mr-2 h-4 w-4" />Print</Button>
+          <Button variant="outline" onClick={() => downloadPdf('open')}><FileText className="mr-2 h-4 w-4" />Print / Preview</Button>
+          <Button variant="outline" onClick={() => downloadPdf('download')}><Download className="mr-2 h-4 w-4" />Download PDF</Button>
           {isDraft(invoice.status) && (
             <>
               <Button variant="outline" onClick={saveDraft} disabled={isSaving}><Save className="mr-2 h-4 w-4" />Save Draft</Button>
               <Button onClick={submitInvoice}><PencilLine className="mr-2 h-4 w-4" />Submit</Button>
             </>
           )}
-          {!isDraft(invoice.status) && !isCancelled(invoice.status) && (
-            <>
-              <Button onClick={() => setPaymentOpen(true)}><CreditCard className="mr-2 h-4 w-4" />Record Payment</Button>
-              <Button variant="destructive" onClick={() => setCancelOpen(true)}><Ban className="mr-2 h-4 w-4" />Cancel Invoice</Button>
-            </>
+          {canReceivePayment && (
+            <Button onClick={() => { setPayment(prev => ({ ...prev, amount: String(outstanding), reference: '', notes: '' })); setPaymentOpen(true); }}><CreditCard className="mr-2 h-4 w-4" />Record Payment</Button>
           )}
-          {isCancelled(invoice.status) && <Button onClick={amendInvoice}><FileText className="mr-2 h-4 w-4" />Amend</Button>}
+          {!isDraft(invoice.status) && !isCancelled(invoice.status) && (
+            <Button variant="outline" asChild><Link href={`/invoicing/credit-notes?invoiceId=${invoice.id}`}>Credit Note</Link></Button>
+          )}
+          {canCancel && (
+            <Button variant="destructive" onClick={() => setCancelOpen(true)}><Ban className="mr-2 h-4 w-4" />{isDraft(invoice.status) ? 'Cancel Draft' : 'Cancel Invoice'}</Button>
+          )}
+          {isCancelled(invoice.status) && !amendedToId && <Button onClick={amendInvoice}><FileText className="mr-2 h-4 w-4" />Amend</Button>}
+          {isCancelled(invoice.status) && amendedToId && (
+            <Button variant="outline" asChild><Link href={`/invoicing/sales-invoices/${amendedToId}`}>Open amended {invoice.amendedToNo || 'draft'}</Link></Button>
+          )}
         </div>
       </div>
       </div>
@@ -356,12 +398,31 @@ export default function SalesInvoiceDetailPage() {
                 <DataTable
                   columns={[
                     { key: 'date', header: 'Date', render: (p: Payment) => formatDate(p.date) },
+                    { key: 'paymentNo', header: 'Payment', render: (p: Payment) => p.paymentNo },
                     { key: 'amount', header: 'Amount', render: (p: Payment) => formatCurrency(p.amount, p.currency || invoice.currency) },
+                    { key: 'status', header: 'Status', render: (p: Payment) => <StatusBadge status={p.status || 'POSTED'} /> },
                     { key: 'method', header: 'Method' },
                     { key: 'reference', header: 'Reference', render: (p: Payment) => p.reference || '-' },
                   ]}
                   data={payments}
                   onRowClick={payment => { window.location.href = `/invoicing/payments/${payment.id}`; }}
+                />
+              </CardContent>
+            </Card>
+          )}
+          {creditNotes.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle>Credit Notes</CardTitle></CardHeader>
+              <CardContent>
+                <DataTable
+                  columns={[
+                    { key: 'creditNoteNo', header: 'Credit Note' },
+                    { key: 'date', header: 'Date', render: (n: InvoiceCreditNoteSummary) => n.date ? formatDate(n.date) : '-' },
+                    { key: 'status', header: 'Status', render: (n: InvoiceCreditNoteSummary) => <StatusBadge status={n.status} /> },
+                    { key: 'grandTotal', header: 'Amount', render: (n: InvoiceCreditNoteSummary) => formatCurrency(Number(n.grandTotal || 0), invoice.currency) },
+                  ]}
+                  data={creditNotes}
+                  onRowClick={() => { window.location.href = '/invoicing/credit-notes'; }}
                 />
               </CardContent>
             </Card>
@@ -413,7 +474,8 @@ export default function SalesInvoiceDetailPage() {
             <SummaryLine label="Total" value={formatCurrency(readOnly ? invoiceTotal(invoice) : summary.total, invoice.currency)} strong />
             <div className="border-t border-[#f0ede8] pt-3">
               <SummaryLine label="Paid" value={formatCurrency(Number(invoice.amountPaid || 0), invoice.currency)} />
-              <SummaryLine label="Outstanding" value={formatCurrency(outstanding, invoice.currency)} strong danger={outstanding > 0} />
+              {Number(invoice.creditAmount || 0) > 0 && <SummaryLine label="Credited" value={formatCurrency(Number(invoice.creditAmount || 0), invoice.currency)} />}
+              <SummaryLine label={isDraft(invoice.status) ? 'Outstanding after submit' : 'Outstanding'} value={formatCurrency(isCancelled(invoice.status) ? 0 : outstanding, invoice.currency)} strong danger={outstanding > 0 && !isCancelled(invoice.status)} />
             </div>
           </CardContent>
         </Card>
@@ -426,6 +488,15 @@ export default function SalesInvoiceDetailPage() {
           <div className="grid gap-4">
             <div className="rounded-md border border-[#e5e2dc] bg-[#f8faf9] p-3 text-sm">
               Outstanding: <span className="font-semibold">{formatCurrency(outstanding, invoice.currency)}</span>
+              {Number(payment.amount) > 0 && (
+                <span className="ml-2 text-xs text-[#6b7280]">
+                  {Number(payment.amount) > outstanding + 0.005
+                    ? '- Overpayment is not allowed here; use a Payment Entry to record an advance.'
+                    : Math.abs(Number(payment.amount) - outstanding) <= 0.005
+                      ? '- Exact payment: the invoice becomes Paid.'
+                      : `- Partial payment: ${formatCurrency(outstanding - Number(payment.amount), invoice.currency)} will remain.`}
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Amount</Label><Input type="number" step="0.01" value={payment.amount} onChange={event => setPayment(prev => ({ ...prev, amount: event.target.value }))} /></div>
@@ -451,7 +522,11 @@ export default function SalesInvoiceDetailPage() {
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Cancel invoice?</DialogTitle></DialogHeader>
-          <p className="text-sm text-[#6b7280]">This keeps the invoice for audit and asks the backend to reverse its effects.</p>
+          <p className="text-sm text-[#6b7280]">
+            {isDraft(invoice.status)
+              ? 'The draft is kept for audit with status Cancelled. Nothing was posted, so no ledger reversal is needed.'
+              : 'The invoice is kept for audit, its receivable is cleared and reversal entries are posted to the ledger. You can amend it into a new draft afterwards.'}
+          </p>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setCancelOpen(false)}>Keep Invoice</Button>
             <Button variant="destructive" onClick={cancelInvoice}>Cancel Invoice</Button>

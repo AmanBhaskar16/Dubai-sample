@@ -6,7 +6,12 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:setup": "node scripts/invoicing-db.mjs setup",
+    "db:seed": "node scripts/invoicing-db.mjs seed",
+    "db:migrate-json": "node scripts/invoicing-db.mjs migrate-json",
+    "db:status": "node scripts/invoicing-db.mjs status",
+    "verify:invoicing": "node scripts/verify-invoicing.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

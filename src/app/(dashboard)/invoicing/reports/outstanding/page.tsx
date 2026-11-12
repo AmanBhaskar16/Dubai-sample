@@ -12,7 +12,7 @@ export default function OutstandingReportPage() {
       description="Live receivables by invoice, customer, due date, and payment status."
       endpoint="/invoicing/reports/outstanding"
       keyField="id"
-      filters={{ search: true, customer: true, dateRange: true, overdue: true }}
+      filters={{ search: true, customer: true, dateRange: true, overdue: true, currency: true }}
       kpis={[
         { key: 'invoiceCount', label: 'Open Invoices' },
         { key: 'outstandingAmount', label: 'Outstanding', money: true },
@@ -33,7 +33,7 @@ export default function OutstandingReportPage() {
         { key: 'dueDate', header: 'Due Date', render: (invoice: any) => invoice.dueDate ? formatDate(invoice.dueDate) : '-' },
         { key: 'daysOverdue', header: 'Overdue Days', render: (invoice: any) => invoice.daysOverdue > 0 ? invoice.daysOverdue : 'Current' },
         { key: 'status', header: 'Doc Status', render: (invoice: any) => <StatusBadge status={invoice.status} /> },
-        { key: 'paymentStatus', header: 'Payment', render: (invoice: any) => <StatusBadge status={invoice.paymentStatus || 'SENT'} /> },
+        { key: 'paymentStatus', header: 'Payment', render: (invoice: any) => <StatusBadge status={invoice.paymentStatus || 'UNPAID'} /> },
         { key: 'total', header: 'Total', render: (invoice: any) => formatCurrency(Number(invoice.total || invoice.grandTotal || 0), invoice.currency) },
         { key: 'amountPaid', header: 'Paid', render: (invoice: any) => formatCurrency(Number(invoice.amountPaid || 0), invoice.currency) },
         { key: 'outstandingAmount', header: 'Outstanding', render: (invoice: any) => <span className="font-semibold">{formatCurrency(Number(invoice.outstandingAmount || 0), invoice.currency)}</span> },

@@ -609,7 +609,7 @@ export interface Supplier {
 // Sales
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
 export type SalesOrderStatus = 'DRAFT' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'ON_HOLD' | 'CLOSED' | 'CANCELLED';
-export type InvoiceStatus = 'DRAFT' | 'SUBMITTED' | 'SENT' | 'PARTIAL' | 'PAID' | 'OVERDUE' | 'CANCELLED';
+export type InvoiceStatus = 'DRAFT' | 'SUBMITTED' | 'SENT' | 'PARTIAL' | 'PAID' | 'CREDITED' | 'OVERDUE' | 'CANCELLED';
 export type PaymentType = 'RECEIVED' | 'MADE';
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'UPI' | 'CARD' | 'CREDIT_CARD' | 'CHEQUE' | 'ONLINE';
 export type PurchaseOrderStatus = 'DRAFT' | 'SENT' | 'CONFIRMED' | 'RECEIVING' | 'RECEIVED' | 'CANCELLED';
@@ -711,7 +711,29 @@ export interface SalesInvoice {
   terms?: string;
   items: OrderItem[];
   payments?: Payment[];
+  creditAmount?: number;
+  isOverdue?: boolean;
+  amendedFromId?: string;
+  amendedToId?: string;
+  amendedToNo?: string;
+  deliveryNoteId?: string;
+  creditNotes?: InvoiceCreditNoteSummary[];
+  paymentAllocations?: InvoicePaymentAllocation[];
   createdAt: string;
+}
+
+export interface InvoiceCreditNoteSummary {
+  id: string;
+  creditNoteNo: string;
+  status: string;
+  grandTotal: number;
+  date?: string;
+}
+
+export interface InvoicePaymentAllocation {
+  invoiceId: string;
+  allocatedAmount: number;
+  paymentEntry?: { id: string; paymentNo: string; date?: string; method?: string; reference?: string; status?: string };
 }
 
 export interface Payment {
@@ -721,7 +743,10 @@ export interface Payment {
   customerId?: string;
   customer?: { name: string };
   invoiceId?: string;
-  invoice?: { invoiceNo: string };
+  invoice?: { invoiceNo: string; status?: string; outstandingAmount?: number; currency?: string };
+  status?: 'POSTED' | 'CANCELLED';
+  cancelReason?: string;
+  cancelledAt?: string;
   date: string;
   amount: number;
   currency: string;

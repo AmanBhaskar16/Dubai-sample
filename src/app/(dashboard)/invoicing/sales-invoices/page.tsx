@@ -18,10 +18,11 @@ import toast from 'react-hot-toast';
 const statuses: Array<{ label: string; value: '' | InvoiceStatus }> = [
   { label: 'All', value: '' },
   { label: 'Draft', value: 'DRAFT' },
-  { label: 'Sent', value: 'SENT' },
+  { label: 'Submitted', value: 'SUBMITTED' },
   { label: 'Partial', value: 'PARTIAL' },
   { label: 'Paid', value: 'PAID' },
   { label: 'Overdue', value: 'OVERDUE' },
+  { label: 'Credited', value: 'CREDITED' },
   { label: 'Cancelled', value: 'CANCELLED' },
 ];
 

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, FileClock, PackageCheck, Play, Plus, Trash2, Truck } from 'lucide-react';
+import Link from 'next/link';
+import { AlertCircle, ArrowUpRight, ClipboardList, FileClock, PackageCheck, Play, Plus, Trash2, Truck } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -11,7 +12,7 @@ import { DataTable } from '@/components/shared/DataTable';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { SelectEmptyState } from '@/components/shared/SelectEmptyState';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import { showApiError, showApiSuccess } from '@/lib/apiError';
 import { DeskPage, Field } from './AdvancedInvoicingShell';
 import toast from 'react-hot-toast';
@@ -30,10 +31,12 @@ export function PaymentEntriesPage() {
   const [entries, setEntries] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [draftInvoices, setDraftInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
   const [editingPaymentEntryId, setEditingPaymentEntryId] = useState<string | null>(null);
+  const emptyEntryForm = { customerId: '', paidAmount: '', method: 'BANK_TRANSFER', reference: '', invoiceId: '', allocatedAmount: '' };
   const [form, setForm] = useState({
     customerId: '',
     paidAmount: '',
@@ -46,20 +49,19 @@ export function PaymentEntriesPage() {
   const load = async () => {
     setIsLoading(true);
     try {
-      const [entryRes, invoiceRes, customerRes] = await Promise.all([
-        api.get('/payments/entries'),
-        api.get('/invoices', { params: { limit: 200 } }),
+      const [entryRes, invoiceRes, customerRes, draftRes] = await Promise.all([
+        api.get('/payments/entries', { params: { limit: 200 } }),
+        api.get('/invoices', { params: { limit: 500, status: 'OPEN' } }),
         api.get('/customers', { params: { limit: 200 } }),
+        api.get('/invoices', { params: { limit: 50, status: 'DRAFT' } }),
       ]);
       setEntries(items(entryRes.data));
       const openInvoices = items(invoiceRes.data).filter(
-        (invoice: any) =>
-          invoice.status !== 'DRAFT' &&
-          invoice.status !== 'CANCELLED' &&
-          Number(invoice.outstandingAmount || invoice.total - invoice.amountPaid) > 0
+        (invoice: any) => ['SUBMITTED', 'PARTIAL'].includes(invoice.status) && Number(invoice.outstandingAmount || 0) > 0
       );
       setInvoices(openInvoices);
       setCustomers(items(customerRes.data));
+      setDraftInvoices(items(draftRes.data));
     } catch (err: any) {
       showApiError(err, 'Failed to load payment entries');
     } finally {
@@ -75,6 +77,17 @@ export function PaymentEntriesPage() {
     () => invoices.find((invoice) => invoice.id === form.invoiceId),
     [invoices, form.invoiceId]
   );
+  // Only the selected customer's open invoices can be allocated.
+  const allocatableInvoices = useMemo(
+    () => (form.customerId ? invoices.filter((invoice) => invoice.customerId === form.customerId) : invoices),
+    [invoices, form.customerId]
+  );
+  const customerDrafts = useMemo(
+    () => draftInvoices.filter((invoice) => !form.customerId || invoice.customerId === form.customerId),
+    [draftInvoices, form.customerId]
+  );
+  const selectedCustomer = customers.find((customer) => customer.id === form.customerId);
+  const advancePreview = Math.max(0, Number(form.paidAmount || 0) - (form.invoiceId ? Number(form.allocatedAmount || 0) : 0));
 
   const create = async () => {
     if (isSubmitting) return;
@@ -93,20 +106,25 @@ export function PaymentEntriesPage() {
 
     setIsSubmitting(true);
     try {
-      const allocatedAmount = Number(form.allocatedAmount || form.paidAmount || 0);
+      const allocatedAmount = Number(form.allocatedAmount || Math.min(paidNum, Number(selectedInvoice?.outstandingAmount || paidNum)));
+      if (form.invoiceId && allocatedAmount > paidNum) {
+        toast.error('Allocated amount cannot exceed the paid amount');
+        setIsSubmitting(false);
+        return;
+      }
       const payload = {
         type: 'RECEIVED',
         customerId,
         paidAmount: paidNum,
         method: form.method,
         reference: form.reference,
-        currency: selectedInvoice?.currency || 'INR',
+        currency: selectedInvoice?.currency || selectedCustomer?.currency || undefined,
         allocations: form.invoiceId ? [{ invoiceId: form.invoiceId, allocatedAmount }] : [],
       };
       if (editingPaymentEntryId) await api.put(`/payments/entries/${editingPaymentEntryId}`, payload); else await api.post('/payments/entries', payload);
       showApiSuccess(`Payment entry ${editingPaymentEntryId ? 'updated' : 'drafted'}`);
       setOpen(false);
-      setForm({ customerId: '', paidAmount: '', method: 'BANK_TRANSFER', reference: '', invoiceId: '', allocatedAmount: '' });
+      setForm(emptyEntryForm);
       setEditingPaymentEntryId(null);
       load();
     } catch (err: any) {
@@ -132,7 +150,7 @@ export function PaymentEntriesPage() {
       title="Payment Entries"
       description="Allocate one receipt across invoices or keep the balance as customer advance."
       action={
-        <Button onClick={() => { setEditingPaymentEntryId(null); setOpen(true); }}>
+        <Button onClick={() => { setEditingPaymentEntryId(null); setForm(emptyEntryForm); setOpen(true); }}>
           <Plus className="mr-2 h-4 w-4" />
           New Entry
         </Button>
@@ -150,6 +168,11 @@ export function PaymentEntriesPage() {
             { key: 'allocatedAmount', header: 'Allocated', render: (e: any) => formatCurrency(e.allocatedAmount, e.currency) },
             { key: 'unallocatedAmount', header: 'Advance', render: (e: any) => formatCurrency(e.unallocatedAmount, e.currency) },
             {
+              key: 'allocations',
+              header: 'Invoices',
+              render: (e: any) => (e.allocations || []).map((a: any) => a.invoice?.invoiceNo).filter(Boolean).join(', ') || '-',
+            },
+            {
               key: 'actions',
               header: '',
               render: (e: any) => (
@@ -162,7 +185,7 @@ export function PaymentEntriesPage() {
                       Submit
                     </Button>
                   )}
-                  {e.status === 'SUBMITTED' && (
+                  {(e.status === 'SUBMITTED' || e.status === 'DRAFT') && (
                     <Button size="sm" variant="outline" onClick={() => setStatus(e.id, 'CANCELLED')}>
                       Cancel
                     </Button>
@@ -177,11 +200,11 @@ export function PaymentEntriesPage() {
           icon={ClipboardList}
           title="No payment entries"
           description="Create a payment entry to allocate receipts across invoices."
-          action={{ label: 'New Entry', onClick: () => setOpen(true) }}
+          action={{ label: 'New Entry', onClick: () => { setEditingPaymentEntryId(null); setForm(emptyEntryForm); setOpen(true); } }}
         />
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) { setForm(emptyEntryForm); setEditingPaymentEntryId(null); } }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingPaymentEntryId ? 'Edit' : 'New'} Payment Entry</DialogTitle>
@@ -191,7 +214,12 @@ export function PaymentEntriesPage() {
               <Field label="Customer">
                 <Select
                   value={form.customerId}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, customerId: value }))}
+                  onValueChange={(value) => setForm((prev) => ({
+                    ...prev,
+                    customerId: value,
+                    // Drop an allocation that belongs to another customer.
+                    ...(invoices.find((invoice) => invoice.id === prev.invoiceId)?.customerId !== value ? { invoiceId: '', allocatedAmount: '' } : {}),
+                  }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select customer" />
@@ -266,14 +294,14 @@ export function PaymentEntriesPage() {
                     <SelectValue placeholder="Optional invoice allocation" />
                   </SelectTrigger>
                   <SelectContent>
-                    {invoices.length === 0 ? (
+                    {allocatableInvoices.length === 0 ? (
                       <SelectEmptyState
-                        message="No open invoices found"
-                        linkHref="/invoicing/sales-invoices/new"
-                        linkText="Create Invoice"
+                        message={form.customerId ? 'No submitted invoices with a balance for this customer' : 'No open invoices found'}
+                        linkHref="/invoicing/sales-invoices"
+                        linkText="View invoices"
                       />
                     ) : (
-                      invoices.map((invoice) => (
+                      allocatableInvoices.map((invoice) => (
                         <SelectItem key={invoice.id} value={invoice.id}>
                           {invoice.invoiceNo} - {invoice.customer?.name} -{' '}
                           {formatCurrency(invoice.outstandingAmount, invoice.currency)} due
@@ -290,6 +318,27 @@ export function PaymentEntriesPage() {
                   placeholder="Allocated amount"
                 />
               </div>
+              {form.invoiceId && (
+                <button type="button" className="mt-2 text-xs text-[#1674c4] hover:underline" onClick={() => setForm((prev) => ({ ...prev, invoiceId: '', allocatedAmount: '' }))}>
+                  Remove allocation (keep the full receipt as an advance)
+                </button>
+              )}
+              {Number(form.paidAmount || 0) > 0 && (
+                <p className="mt-2 text-xs text-[#6b7280]">
+                  Unallocated amount posted to Customer Advances on submit: {formatCurrency(advancePreview, selectedInvoice?.currency || selectedCustomer?.currency || 'USD')}
+                </p>
+              )}
+              {customerDrafts.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                  <span>Draft invoices cannot be allocated. Submit invoice first:</span>
+                  {customerDrafts.slice(0, 5).map((draft) => (
+                    <Link key={draft.id} href={`/invoicing/sales-invoices/${draft.id}`} className="inline-flex items-center gap-0.5 font-semibold underline">
+                      {draft.invoiceNo} <ArrowUpRight className="h-3 w-3" />
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpen(false)}>
@@ -367,7 +416,7 @@ export function DeliveryNotesPage() {
     try {
       const res = await api.post(`/invoices/from-delivery-note/${id}`);
       const invoice = res.data?.data;
-      showApiSuccess('Draft invoice created from delivery note');
+      showApiSuccess(`Draft invoice ${invoice?.invoiceNo || ''} created from delivery note`);
       if (invoice?.id) window.location.href = `/invoicing/sales-invoices/${invoice.id}`;
     } catch (err: any) {
       showApiError(err, 'Failed to create invoice');
@@ -434,7 +483,7 @@ export function DeliveryNotesPage() {
       description="Draft the shipment, submit when goods leave stock, then invoice from the delivered document."
       meta={`${totalRows} records`}
       action={
-        <Button onClick={() => { setEditingDeliveryId(null); setOpen(true); }}>
+        <Button onClick={() => { setEditingDeliveryId(null); resetDeliveryForm(); setOpen(true); }}>
           <Plus className="mr-2 h-4 w-4" />
           New Delivery Note
         </Button>
@@ -448,10 +497,15 @@ export function DeliveryNotesPage() {
             { key: 'deliveryNo', header: 'Delivery #' },
             { key: 'customer', header: 'Customer', render: (n: any) => n.customer?.name || '-' },
             { key: 'salesOrder', header: 'Sales Order', render: (n: any) => n.salesOrder?.orderNo || '-' },
-            { key: 'warehouse', header: 'Warehouse', render: (n: any) => n.warehouse?.name || 'Main Warehouse' },
+            { key: 'warehouse', header: 'Warehouse', render: (n: any) => n.warehouse?.name || '-' },
             { key: 'date', header: 'Date', render: (n: any) => formatDate(n.date) },
             { key: 'status', header: 'Status', render: (n: any) => <StatusBadge status={n.status} /> },
             { key: 'items', header: 'Items', render: (n: any) => n.items?.length || 0 },
+            {
+              key: 'invoice',
+              header: 'Invoice',
+              render: (n: any) => (n.invoiceId ? <Link className="text-[#1674c4] hover:underline" href={`/invoicing/sales-invoices/${n.invoiceId}`}>{n.invoiceNo}</Link> : '-'),
+            },
             {
               key: 'actions',
               header: '',
@@ -470,7 +524,7 @@ export function DeliveryNotesPage() {
                       Invoice
                     </Button>
                   )}
-                  {n.status === 'SUBMITTED' && (
+                  {(n.status === 'SUBMITTED' || n.status === 'DRAFT') && (
                     <Button size="sm" variant="outline" onClick={() => setStatus(n.id, 'CANCELLED')}>
                       Cancel
                     </Button>
@@ -485,11 +539,11 @@ export function DeliveryNotesPage() {
           icon={PackageCheck}
           title="No delivery notes"
           description="Create delivery notes from confirmed sales orders or enter a manual shipment."
-          action={{ label: 'New Delivery Note', onClick: () => setOpen(true) }}
+          action={{ label: 'New Delivery Note', onClick: () => { setEditingDeliveryId(null); resetDeliveryForm(); setOpen(true); } }}
         />
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) { resetDeliveryForm(); setEditingDeliveryId(null); } }}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>{editingDeliveryId ? 'Edit' : 'New'} Delivery Note</DialogTitle>
@@ -626,13 +680,13 @@ export function DeliveryNotesPage() {
               <Button variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              {form.salesOrderId && (
+              {form.salesOrderId && !editingDeliveryId && (
                 <Button variant="outline" onClick={createFromOrder}>
                   <Truck className="mr-2 h-4 w-4" />
                   Create from Sales Order
                 </Button>
               )}
-              <Button onClick={createManual}>Create Manual Draft</Button>
+              <Button onClick={createManual}>{editingDeliveryId ? 'Update Draft' : 'Create Manual Draft'}</Button>
             </div>
           </div>
         </DialogContent>
@@ -724,7 +778,7 @@ export function AuditLogPage() {
     api
       .get('/invoicing/audit-logs', {
         params: {
-          limit: 100,
+          limit: 200,
           entityType: filters.entityType === 'ALL' ? undefined : filters.entityType,
           action: filters.action === 'ALL' ? undefined : filters.action,
           search: filters.search || undefined,
@@ -741,7 +795,9 @@ export function AuditLogPage() {
 
   useEffect(() => {
     load();
-  }, [filters.entityType, filters.action]);
+    // Date filters apply immediately; the text search applies on Enter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.entityType, filters.action, filters.fromDate, filters.toDate]);
 
   return (
     <DeskPage
@@ -771,7 +827,7 @@ export function AuditLogPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {['ALL', 'SALES_INVOICE', 'DELIVERY_NOTE', 'CREDIT_NOTE', 'PAYMENT_ENTRY'].map((type) => (
+            {['ALL', 'SALES_INVOICE', 'PAYMENT', 'PAYMENT_ENTRY', 'CREDIT_NOTE', 'DELIVERY_NOTE', 'TAX_TEMPLATE', 'PRINT_FORMAT', 'SUBSCRIPTION'].map((type) => (
               <SelectItem key={type} value={type}>
                 {type.replaceAll('_', ' ')}
               </SelectItem>
@@ -791,8 +847,13 @@ export function AuditLogPage() {
               'CANCEL',
               'AMEND',
               'DELETE',
+              'PAYMENT',
+              'PAUSE',
+              'RESUME',
+              'RUN_DUE',
               'CREATE_FROM_SALES_ORDER',
               'CREATE_FROM_DELIVERY_NOTE',
+              'CREATE_FROM_SUBSCRIPTION',
             ].map((action) => (
               <SelectItem key={action} value={action}>
                 {action.replaceAll('_', ' ')}
@@ -815,13 +876,13 @@ export function AuditLogPage() {
         <DataTable
           data={logs}
           columns={[
-            { key: 'createdAt', header: 'Time', render: (l: any) => formatDate(l.createdAt) },
+            { key: 'createdAt', header: 'Time', render: (l: any) => formatDateTime(l.createdAt) },
             { key: 'entityType', header: 'Document' },
             {
               key: 'voucher',
               header: 'Voucher',
               render: (l: any) =>
-                l.invoice?.invoiceNo || l.deliveryNote?.deliveryNo || l.creditNote?.creditNoteNo || l.entityId,
+                l.voucher || l.invoice?.invoiceNo || l.deliveryNote?.deliveryNo || l.creditNote?.creditNoteNo || l.entityId,
             },
             { key: 'action', header: 'Action', render: (l: any) => <StatusBadge status={l.action} /> },
             { key: 'statusBefore', header: 'Before', render: (l: any) => l.statusBefore || '-' },

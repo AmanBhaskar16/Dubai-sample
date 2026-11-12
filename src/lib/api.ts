@@ -43,6 +43,16 @@ api.interceptors.request.use((config) => {
       config.headers['x-tenant-slug'] = subdomain;
     }
   }
+  if (typeof window !== 'undefined') {
+    // Identifies the acting user in the invoicing audit log.
+    try {
+      const stored = JSON.parse(localStorage.getItem('user') || 'null');
+      if (stored?.email) config.headers['x-actor-email'] = String(stored.email);
+      if (stored?.role) config.headers['x-actor-role'] = String(stored.role);
+    } catch {
+      // ignore unreadable user cache
+    }
+  }
   const token = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

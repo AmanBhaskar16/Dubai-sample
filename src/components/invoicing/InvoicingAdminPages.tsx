@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { FileText, Plus, RotateCcw, Trash2, Play, Printer, Repeat, Settings2, AlertCircle, ArrowUpRight, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -96,7 +96,21 @@ export function TaxTemplatesPage() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', code: '', scope: 'BOTH', description: '', isDefault: false });
-  const [lines, setLines] = useState<any[]>([{ label: 'GST', rate: 18, chargeType: 'ON_NET_TOTAL', isRecoverable: false }]);
+  const [lines, setLines] = useState<any[]>([{ label: 'VAT', rate: 5, chargeType: 'ON_NET_TOTAL', isRecoverable: false }]);
+  const resetTemplateForm = () => {
+    setForm({ name: '', code: '', scope: 'BOTH', description: '', isDefault: false });
+    setLines([{ label: 'VAT', rate: 5, chargeType: 'ON_NET_TOTAL', isRecoverable: false }]);
+    setEditingId(null);
+  };
+  const toggleTemplate = async (row: any) => {
+    try {
+      await api.patch(`/invoicing/tax-templates/${row.id}`, row.isActive ? { isActive: false, isDefault: false } : { isActive: true });
+      showApiSuccess(`Tax template ${row.code} ${row.isActive ? 'disabled' : 'enabled'}`);
+      fetchTemplates();
+    } catch (err: any) {
+      showApiError(err, 'Failed to update tax template');
+    }
+  };
 
   const fetchTemplates = () => {
     setIsLoading(true);
@@ -138,9 +152,7 @@ export function TaxTemplatesPage() {
       if (editingId) await api.patch(`/invoicing/tax-templates/${editingId}`, payload); else await api.post('/invoicing/tax-templates', payload);
       showApiSuccess(`Tax template "${trimmedName}" ${editingId ? 'updated' : 'created'} successfully`);
       setOpen(false);
-      setForm({ name: '', code: '', scope: 'BOTH', description: '', isDefault: false });
-      setLines([{ label: 'GST', rate: 18, chargeType: 'ON_NET_TOTAL', isRecoverable: false }]);
-      setEditingId(null);
+      resetTemplateForm();
       fetchTemplates();
     } catch (err: any) {
       showApiError(err, 'Failed to create tax template');
@@ -153,9 +165,9 @@ export function TaxTemplatesPage() {
   return (
     <CrudShell
       title="Tax Templates"
-      description="Reusable GST/tax templates used by invoice line items."
+      description="Reusable VAT/tax templates. A template selected on an invoice line overrides the manual tax rate when totals are calculated on the server."
       actionLabel="New Template"
-      onAction={() => { setEditingId(null); setOpen(true); }}
+      onAction={() => { resetTemplateForm(); setOpen(true); }}
     >
       <DataTable
         data={templates}
@@ -172,12 +184,24 @@ export function TaxTemplatesPage() {
           {
             key: 'isActive',
             header: 'Status',
-            render: (t: any) => <StatusBadge status={t.isActive ? 'ACTIVE' : 'INACTIVE'} />,
+            render: (t: any) => <div className="flex gap-1"><StatusBadge status={t.isActive ? 'ACTIVE' : 'INACTIVE'} />{t.isDefault && <StatusBadge status="DEFAULT" />}</div>,
           },
-          { key: 'actions', header: '', render: (row: any) => <Button size="sm" variant="outline" onClick={() => editTemplate(row)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button> },
+          {
+            key: 'actions',
+            header: '',
+            render: (row: any) => (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => editTemplate(row)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>
+                <Button size="sm" variant="outline" onClick={() => toggleTemplate(row)}>{row.isActive ? 'Disable' : 'Enable'}</Button>
+              </div>
+            ),
+          },
         ]}
       />
-      <Dialog open={open} onOpenChange={setOpen}>
+      {!isLoading && templates.length === 0 && (
+        <EmptyState icon={Settings2} title="No tax templates" description="Create a template (for example UAE VAT 5%) or run npm run db:seed to load sample templates." action={{ label: 'New Template', onClick: () => { resetTemplateForm(); setOpen(true); } }} />
+      )}
+      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) resetTemplateForm(); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Edit' : 'New'} Tax Template</DialogTitle>
@@ -311,6 +335,10 @@ export function TaxTemplatesPage() {
                 </Button>
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm text-[#374151]">
+              <input type="checkbox" checked={form.isDefault} onChange={(event) => setForm((prev) => ({ ...prev, isDefault: event.target.checked }))} />
+              Default template
+            </label>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpen(false)}>
                 Cancel
@@ -333,6 +361,7 @@ export function CreditNotesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
   const [editingCreditId, setEditingCreditId] = useState<string | null>(null);
+  const deepLinkHandled = useRef(false);
   const [form, setForm] = useState({
     originalInvoiceId: '',
     reason: 'SALES_RETURN',
@@ -343,6 +372,25 @@ export function CreditNotesPage() {
     { productId: '', itemCode: '', description: '', quantity: 1, unitPrice: 0, discount: 0, taxRate: 0 },
   ]);
 
+  const selectInvoice = (invoiceId: string) => applyInvoice(invoices.find((item) => item.id === invoiceId) || { id: invoiceId });
+  function applyInvoice(invoice: any) {
+    setForm((prev) => ({ ...prev, originalInvoiceId: invoice.id }));
+    if (invoice?.items?.length) {
+      setRows(
+        invoice.items.map((item: any) => ({
+          productId: item.productId,
+          itemCode: item.itemCode || item.product?.sku || '',
+          description: item.description || item.product?.name || '',
+          quantity: Number(item.quantity || 1),
+          unitPrice: Number(item.rate || item.unitPrice || 0),
+          discount: Number(item.discount || 0),
+          taxRate: Number(item.taxRate || 0),
+          taxTemplateId: item.taxTemplateId || undefined,
+        }))
+      );
+    }
+  }
+
   const load = async () => {
     setIsLoading(true);
     try {
@@ -351,7 +399,21 @@ export function CreditNotesPage() {
         api.get('/invoices', { params: { limit: 200 } }),
       ]);
       setNotes(asItems(noteRes.data));
-      setInvoices(asItems(invoiceRes.data).filter((invoice: any) => !['DRAFT', 'CANCELLED'].includes(invoice.status)));
+      const creditable = asItems(invoiceRes.data).filter((invoice: any) => !['DRAFT', 'CANCELLED'].includes(invoice.status));
+      setInvoices(creditable);
+      // Deep link from an invoice: /invoicing/credit-notes?invoiceId=... opens the dialog once.
+      const linkedId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('invoiceId') : null;
+      if (linkedId && !deepLinkHandled.current) {
+        deepLinkHandled.current = true;
+        const linked = creditable.find((invoice: any) => invoice.id === linkedId);
+        if (linked) {
+          setEditingCreditId(null);
+          applyInvoice(linked);
+          setOpen(true);
+        } else {
+          toast.error('That invoice cannot be credited (it is a draft, cancelled or missing).');
+        }
+      }
     } catch (err: any) {
       showApiError(err, 'Failed to load credit notes and invoices');
     } finally {
@@ -374,23 +436,6 @@ export function CreditNotesPage() {
     setRows([{ productId: '', itemCode: '', description: '', quantity: 1, unitPrice: 0, discount: 0, taxRate: 0 }]);
   };
 
-  const selectInvoice = (invoiceId: string) => {
-    const invoice = invoices.find((item) => item.id === invoiceId);
-    setForm((prev) => ({ ...prev, originalInvoiceId: invoiceId }));
-    if (invoice?.items?.length) {
-      setRows(
-        invoice.items.map((item: any) => ({
-          productId: item.productId,
-          itemCode: item.itemCode || item.product?.sku || '',
-          description: item.description || item.product?.name || '',
-          quantity: Number(item.quantity || 1),
-          unitPrice: Number(item.rate || item.unitPrice || 0),
-          discount: Number(item.discount || 0),
-          taxRate: Number(item.taxRate || 0),
-        }))
-      );
-    }
-  };
 
   const create = async () => {
     if (isSubmitting) return;
@@ -400,15 +445,16 @@ export function CreditNotesPage() {
       return;
     }
     const items = rows
-      .filter((row) => row.productId && Number(row.quantity) > 0)
+      .filter((row) => (row.productId || row.description) && Number(row.quantity) > 0)
       .map((row) => ({
-        productId: row.productId,
+        productId: row.productId || undefined,
         itemCode: row.itemCode,
         description: row.description,
         quantity: Number(row.quantity),
         unitPrice: Number(row.unitPrice),
         discount: Number(row.discount || 0),
         taxRate: Number(row.taxRate || 0),
+        taxTemplateId: row.taxTemplateId || undefined,
       }));
 
     if (!items.length) {
@@ -418,7 +464,8 @@ export function CreditNotesPage() {
 
     setIsSubmitting(true);
     try {
-      if (editingCreditId) await api.put(`/invoicing/credit-notes/${editingCreditId}`, { ...form, items }); else await api.post(`/invoicing/credit-notes/from-invoice/${form.originalInvoiceId}`, { ...form, items });
+      const payload = { reason: form.reason, date: form.date, notes: form.notes, items };
+      if (editingCreditId) await api.put(`/invoicing/credit-notes/${editingCreditId}`, payload); else await api.post(`/invoicing/credit-notes/from-invoice/${form.originalInvoiceId}`, payload);
       showApiSuccess(`Draft credit note ${editingCreditId ? 'updated' : 'created'} successfully`);
       setOpen(false);
       reset();
@@ -430,7 +477,7 @@ export function CreditNotesPage() {
       setIsSubmitting(false);
     }
   };
-  const editCredit = (note: any) => { setEditingCreditId(note.id); setForm({ originalInvoiceId: note.originalInvoiceId, reason: note.reason || 'OTHER', date: String(note.date).slice(0, 10), notes: note.notes || '' }); setRows((note.items || []).map((i: any) => ({ productId: i.productId, itemCode: i.itemCode, description: i.description || '', quantity: Number(i.quantity), unitPrice: Number(i.rate), discount: Number(i.discount || 0), taxRate: Number(i.taxRate || 0) }))); setOpen(true); };
+  const editCredit = (note: any) => { setEditingCreditId(note.id); setForm({ originalInvoiceId: note.originalInvoiceId, reason: note.reason || 'OTHER', date: String(note.date).slice(0, 10), notes: note.notes || '' }); setRows((note.items || []).map((i: any) => ({ productId: i.productId, itemCode: i.itemCode, description: i.description || '', quantity: Number(i.quantity), unitPrice: Number(i.unitPrice ?? i.rate), discount: Number(i.discount || 0), taxRate: Number(i.taxRate || 0), taxTemplateId: i.taxTemplateId }))); setOpen(true); };
 
   const setStatus = async (id: string, status: string) => {
     try {
@@ -447,7 +494,7 @@ export function CreditNotesPage() {
       title="Credit Notes"
       description="Create customer credits from submitted invoices, then submit to reduce receivables and post ledger reversal."
       actionLabel="New Credit Note"
-      onAction={() => { setEditingCreditId(null); setOpen(true); }}
+      onAction={() => { setEditingCreditId(null); reset(); setOpen(true); }}
     >
       {notes.length || isLoading ? (
         <DataTable
@@ -462,6 +509,13 @@ export function CreditNotesPage() {
             { key: 'status', header: 'Status', render: (n: any) => <StatusBadge status={n.status} /> },
             { key: 'grandTotal', header: 'Total', render: (n: any) => formatCurrency(n.grandTotal, n.currency) },
             {
+              key: 'appliedAmount',
+              header: 'Applied / Refundable',
+              render: (n: any) => n.status === 'SUBMITTED' || n.appliedAmount != null
+                ? `${formatCurrency(Number(n.appliedAmount || 0), n.currency)} / ${formatCurrency(Number(n.refundableAmount || 0), n.currency)}`
+                : '-',
+            },
+            {
               key: 'actions',
               header: '',
               render: (n: any) => (
@@ -474,7 +528,7 @@ export function CreditNotesPage() {
                       Submit
                     </Button>
                   )}
-                  {n.status === 'SUBMITTED' && (
+                  {(n.status === 'SUBMITTED' || n.status === 'DRAFT') && (
                     <Button size="sm" variant="outline" onClick={() => setStatus(n.id, 'CANCELLED')}>
                       Cancel
                     </Button>
@@ -489,11 +543,11 @@ export function CreditNotesPage() {
           icon={FileText}
           title="No credit notes"
           description="Create a credit note from a submitted invoice for returns, corrections, or goodwill credits."
-          action={{ label: 'New Credit Note', onClick: () => setOpen(true) }}
+          action={{ label: 'New Credit Note', onClick: () => { setEditingCreditId(null); reset(); setOpen(true); } }}
         />
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) { reset(); setEditingCreditId(null); } }}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>{editingCreditId ? 'Edit' : 'New'} Credit Note</DialogTitle>
@@ -520,7 +574,7 @@ export function CreditNotesPage() {
 
             <div className="grid gap-3 md:grid-cols-3">
               <Field label="Original Invoice *">
-                <Select value={form.originalInvoiceId} onValueChange={selectInvoice}>
+                <Select value={form.originalInvoiceId} onValueChange={selectInvoice} disabled={!!editingCreditId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select submitted invoice" />
                   </SelectTrigger>
@@ -580,7 +634,9 @@ export function CreditNotesPage() {
             {selectedInvoice && (
               <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                 Crediting against {selectedInvoice.invoiceNo}. Invoice total:{' '}
-                {formatCurrency(selectedInvoice.grandTotal || selectedInvoice.total, selectedInvoice.currency)}.
+                {formatCurrency(selectedInvoice.grandTotal || selectedInvoice.total, selectedInvoice.currency)}; already credited{' '}
+                {formatCurrency(Number(selectedInvoice.creditAmount || 0), selectedInvoice.currency)}; outstanding{' '}
+                {formatCurrency(Number(selectedInvoice.outstandingAmount || 0), selectedInvoice.currency)}. Any credit above the outstanding balance becomes a refundable customer advance.
               </div>
             )}
 
@@ -680,29 +736,86 @@ function CreditRows({ rows, onChange, currency }: { rows: any[]; onChange: (rows
   );
 }
 
+const VOUCHER_TYPES = ['SALES_INVOICE', 'INVOICE_REVERSAL', 'PAYMENT', 'PAYMENT_REVERSAL', 'PAYMENT_ENTRY', 'PAYMENT_ENTRY_REVERSAL', 'CREDIT_NOTE', 'CREDIT_NOTE_REVERSAL'];
+const LEDGER_ACCOUNTS = [['1000', 'Bank'], ['1100', 'Accounts Receivable'], ['2100', 'Tax Payable'], ['2200', 'Customer Advances'], ['4000', 'Sales Revenue'], ['4100', 'Sales Returns']];
+
 export function LedgerPage() {
   const [entries, setEntries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const [sums, setSums] = useState({ debit: 0, credit: 0 });
+  const [filters, setFilterState] = useState({ search: '', voucherType: 'ALL', account: 'ALL', fromDate: '', toDate: '' });
+  const filterKey = JSON.stringify(filters);
+  const setFilters = (update: (prev: typeof filters) => typeof filters) => { setFilterState(update); setPage(1); };
   useEffect(() => {
-    setIsLoading(true);
-    api
-      .get('/invoicing/ledger')
-      .then((res) => setEntries(asItems(res.data)))
-      .catch((err) => showApiError(err, 'Failed to load general ledger'))
-      .finally(() => setIsLoading(false));
-  }, []);
+    const timeout = window.setTimeout(() => {
+      setIsLoading(true);
+      api
+        .get('/invoicing/ledger', {
+          params: {
+            page,
+            limit: 100,
+            search: filters.search || undefined,
+            voucherType: filters.voucherType === 'ALL' ? undefined : filters.voucherType,
+            account: filters.account === 'ALL' ? undefined : filters.account,
+            fromDate: filters.fromDate || undefined,
+            toDate: filters.toDate || undefined,
+          },
+        })
+        .then((res) => {
+          setEntries(asItems(res.data));
+          setTotalPages(res.data?.data?.totalPages || 1);
+          setTotalRows(res.data?.data?.total || 0);
+          setSums(res.data?.totals || { debit: 0, credit: 0 });
+        })
+        .catch((err) => showApiError(err, 'Failed to load general ledger'))
+        .finally(() => setIsLoading(false));
+    }, 250);
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, filterKey]);
 
   return (
     <CrudShell
       title="General Ledger"
-      description="Immutable accounting entries posted by invoices, payments, and credit notes."
+      description="Double-entry postings created by invoice submit/cancel, payments, payment entries and credit notes. Entries are never edited; reversals are posted instead."
     >
+      <div className="grid gap-3 md:grid-cols-5">
+        <Input value={filters.search} onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} placeholder="Voucher no. or remarks" />
+        <Select value={filters.voucherType} onValueChange={(voucherType) => setFilters((prev) => ({ ...prev, voucherType }))}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All voucher types</SelectItem>
+            {VOUCHER_TYPES.map((type) => <SelectItem key={type} value={type}>{type.replaceAll('_', ' ')}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.account} onValueChange={(account) => setFilters((prev) => ({ ...prev, account }))}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All accounts</SelectItem>
+            {LEDGER_ACCOUNTS.map(([code, name]) => <SelectItem key={code} value={code}>{code} - {name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Input type="date" value={filters.fromDate} onChange={(event) => setFilters((prev) => ({ ...prev, fromDate: event.target.value }))} />
+        <Input type="date" value={filters.toDate} onChange={(event) => setFilters((prev) => ({ ...prev, toDate: event.target.value }))} />
+      </div>
+      <div className="flex flex-wrap gap-4 rounded-md border border-[#e5e2dc] bg-[#f8faf9] px-3 py-2 text-sm">
+        <span>{totalRows} entries</span>
+        <span>Total debit: <strong>{Number(sums.debit || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+        <span>Total credit: <strong>{Number(sums.credit || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+        {filters.account === 'ALL' && Math.abs(Number(sums.debit || 0) - Number(sums.credit || 0)) > 0.005 && (
+          <span className="text-[#c3423f]">Debits and credits differ - narrow the filter or check the postings.</span>
+        )}
+      </div>
       <DataTable
         data={entries}
         isLoading={isLoading}
+        emptyMessage="No ledger entries. Submit an invoice or record a payment to create postings."
         columns={[
           { key: 'postingDate', header: 'Date', render: (e: any) => formatDate(e.postingDate) },
+          { key: 'voucherNo', header: 'Voucher', render: (e: any) => e.voucherNo || '-' },
           {
             key: 'account',
             header: 'Account',
@@ -714,6 +827,13 @@ export function LedgerPage() {
           { key: 'remarks', header: 'Remarks', render: (e: any) => e.remarks || '-' },
         ]}
       />
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 text-sm">
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+          <span>Page {page} of {totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button>
+        </div>
+      )}
     </CrudShell>
   );
 }
@@ -737,6 +857,20 @@ export function PrintFormatsPage() {
     showPaymentTerms: true,
   });
 
+  const blankFormat = {
+    name: '',
+    docType: 'SALES_INVOICE',
+    title: 'Tax Invoice',
+    footer: 'Thank you for your business.',
+    isDefault: false,
+    isActive: true,
+    showLogo: true,
+    showHsnSummary: true,
+    showAmountInWords: true,
+    showPaymentTerms: true,
+  };
+  const resetFormatForm = () => { setForm(blankFormat); setEditingFormatId(null); };
+
   const fetchFormats = () => {
     setIsLoading(true);
     api
@@ -752,6 +886,10 @@ export function PrintFormatsPage() {
 
   const create = async () => {
     if (isSubmitting) return;
+    if (!form.name.trim()) {
+      toast.error('Please enter a format name');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const payload = {
@@ -772,7 +910,7 @@ export function PrintFormatsPage() {
       if (editingFormatId) await api.patch(`/invoicing/print-formats/${editingFormatId}`, payload); else await api.post('/invoicing/print-formats', payload);
       showApiSuccess(`Print format ${editingFormatId ? 'updated' : 'created'} successfully`);
       setOpen(false);
-      setEditingFormatId(null);
+      resetFormatForm();
       fetchFormats();
     } catch (err: any) {
       showApiError(err, 'Failed to create format');
@@ -795,9 +933,9 @@ export function PrintFormatsPage() {
   return (
     <CrudShell
       title="Print Formats"
-      description="Reusable PDF layouts. The default active Sales Invoice format is used by the invoice PDF endpoint."
+      description="Reusable PDF layouts. The default active Sales Invoice format is used by the invoice PDF unless another format is picked on the invoice. Title, footer and the section toggles change the generated PDF."
       actionLabel="New Format"
-      onAction={() => { setEditingFormatId(null); setOpen(true); }}
+      onAction={() => { resetFormatForm(); setOpen(true); }}
     >
       <DataTable
         data={formats}
@@ -808,7 +946,11 @@ export function PrintFormatsPage() {
           {
             key: 'template',
             header: 'Layout',
-            render: (f: any) => f.template?.title || f.template?.sections?.join(', ') || 'Standard',
+            render: (f: any) => {
+              const t = f.template || {};
+              const enabled = [t.showLogo !== false && 'Letterhead', t.showHsnSummary !== false && 'Tax summary', t.showAmountInWords !== false && 'Amount in words', t.showPaymentTerms !== false && 'Payment terms'].filter(Boolean);
+              return `${t.title || 'Standard'}${enabled.length ? ` · ${enabled.join(', ')}` : ''}`;
+            },
           },
           {
             key: 'isDefault',
@@ -838,7 +980,10 @@ export function PrintFormatsPage() {
           },
         ]}
       />
-      <Dialog open={open} onOpenChange={setOpen}>
+      {!isLoading && formats.length === 0 && (
+        <EmptyState icon={Printer} title="No print formats" description="Invoices print with the built-in layout until you create a format (or run npm run db:seed)." action={{ label: 'New Format', onClick: () => { resetFormatForm(); setOpen(true); } }} />
+      )}
+      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) resetFormatForm(); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingFormatId ? 'Edit' : 'New'} Print Format</DialogTitle>
@@ -873,7 +1018,7 @@ export function PrintFormatsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, footer: e.target.value }))}
               />
             </Field>
-            <div className="grid gap-2 md:grid-cols-4">
+            <div className="grid gap-2 md:grid-cols-5">
               <ToggleButton
                 active={form.isDefault}
                 label="Default"
@@ -886,13 +1031,18 @@ export function PrintFormatsPage() {
               />
               <ToggleButton
                 active={form.showHsnSummary}
-                label="HSN Summary"
+                label="Tax Summary"
                 onClick={() => setForm((f) => ({ ...f, showHsnSummary: !f.showHsnSummary }))}
               />
               <ToggleButton
                 active={form.showAmountInWords}
                 label="Amount in Words"
                 onClick={() => setForm((f) => ({ ...f, showAmountInWords: !f.showAmountInWords }))}
+              />
+              <ToggleButton
+                active={form.showPaymentTerms}
+                label="Payment Terms"
+                onClick={() => setForm((f) => ({ ...f, showPaymentTerms: !f.showPaymentTerms }))}
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -934,6 +1084,12 @@ export function SubscriptionsPage() {
     { productId: '', itemCode: '', description: '', quantity: 1, unitPrice: 0, discount: 0, taxRate: 0, total: 0 },
   ]);
   const summary = useMemo(() => calculateLineSummary(rows), [rows]);
+  const resetSubscriptionForm = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setForm({ name: '', customerId: '', frequency: 'MONTHLY', startDate: today, nextRunDate: today, endDate: '', currency: 'INR', autoSubmit: false, notes: '', terms: '' });
+    setRows([{ productId: '', itemCode: '', description: '', quantity: 1, unitPrice: 0, discount: 0, taxRate: 0, total: 0 }]);
+    setEditingSubscriptionId(null);
+  };
 
   const fetchSubscriptions = () => {
     setIsLoading(true);
@@ -955,6 +1111,10 @@ export function SubscriptionsPage() {
   const createSubscription = async () => {
     if (isSubmitting) return;
 
+    if (!form.name.trim()) {
+      toast.error('Enter a subscription name');
+      return;
+    }
     if (!form.customerId) {
       toast.error('Select a customer');
       return;
@@ -987,7 +1147,7 @@ export function SubscriptionsPage() {
       if (editingSubscriptionId) await api.patch(`/invoicing/subscriptions/${editingSubscriptionId}`, payload); else await api.post('/invoicing/subscriptions', payload);
       showApiSuccess(`Subscription ${editingSubscriptionId ? 'updated' : 'created'} successfully`);
       setOpen(false);
-      setEditingSubscriptionId(null);
+      resetSubscriptionForm();
       fetchSubscriptions();
     } catch (err: any) {
       showApiError(err, 'Failed to create subscription');
@@ -995,7 +1155,7 @@ export function SubscriptionsPage() {
       setIsSubmitting(false);
     }
   };
-  const editSubscription = (row: any) => { setEditingSubscriptionId(row.id); setForm({ name: row.name || '', customerId: row.customerId || '', frequency: row.frequency || 'MONTHLY', startDate: String(row.startDate).slice(0, 10), nextRunDate: String(row.nextRunDate).slice(0, 10), endDate: row.endDate ? String(row.endDate).slice(0, 10) : '', currency: row.currency || 'INR', autoSubmit: !!row.autoSubmit, notes: row.notes || '', terms: row.terms || '' }); setRows((row.items || []).map((i: any) => ({ ...i, total: Number(i.quantity) * Number(i.unitPrice) }))); setOpen(true); };
+  const editSubscription = (row: any) => { setEditingSubscriptionId(row.id); setForm({ name: row.name || '', customerId: row.customerId || '', frequency: row.frequency || 'MONTHLY', startDate: String(row.startDate).slice(0, 10), nextRunDate: String(row.nextRunDate).slice(0, 10), endDate: row.endDate ? String(row.endDate).slice(0, 10) : '', currency: row.currency || 'INR', autoSubmit: !!row.autoSubmit, notes: row.notes || '', terms: row.terms || '' }); setRows((row.items || []).map((i: any) => ({ ...i, taxTemplateName: i.taxTemplate?.name || i.taxTemplateName || '', total: Number(i.total ?? Number(i.quantity) * Number(i.unitPrice)) }))); setOpen(true); };
 
   const toggleSubscription = async (subscription: any) => {
     try {
@@ -1012,7 +1172,7 @@ export function SubscriptionsPage() {
       title="Recurring Invoices"
       description="Templates that generate real sales invoices on schedule, with optional auto-submit."
       actionLabel="New Subscription"
-      onAction={() => { setEditingSubscriptionId(null); setOpen(true); }}
+      onAction={() => { resetSubscriptionForm(); setOpen(true); }}
       extraAction={<RecurringRunnerButton onDone={fetchSubscriptions} />}
     >
       {subscriptions.length || isLoading ? (
@@ -1024,17 +1184,22 @@ export function SubscriptionsPage() {
             { key: 'customer', header: 'Customer', render: (s: any) => s.customer?.name || s.customerId },
             { key: 'frequency', header: 'Frequency' },
             { key: 'nextRunDate', header: 'Next Run', render: (s: any) => formatDate(s.nextRunDate) },
+            { key: 'amount', header: 'Amount', render: (s: any) => formatCurrency(Number(s.amount || 0), s.currency) },
             { key: 'autoSubmit', header: 'Mode', render: (s: any) => (s.autoSubmit ? 'Auto submit' : 'Draft first') },
             {
               key: 'generatedInvoices',
               header: 'Generated',
               render: (s: any) =>
-                s.generatedInvoices?.length
-                  ? s.generatedInvoices
-                      .map((run: any) => run.invoice?.invoiceNo)
-                      .filter(Boolean)
-                      .join(', ')
-                  : '-',
+                s.generatedInvoices?.length ? (
+                  <div className="flex flex-wrap gap-1">
+                    {s.generatedInvoices.slice(-5).map((run: any) => (
+                      <Link key={run.invoiceId} href={`/invoicing/sales-invoices/${run.invoiceId}`} className="text-[#1674c4] hover:underline">
+                        {run.invoice?.invoiceNo || run.invoiceId}
+                      </Link>
+                    ))}
+                    {s.generatedInvoices.length > 5 && <span className="text-xs text-[#6b7280]">+{s.generatedInvoices.length - 5} more</span>}
+                  </div>
+                ) : '-',
             },
             {
               key: 'isActive',
@@ -1057,9 +1222,10 @@ export function SubscriptionsPage() {
           icon={FileText}
           title="No subscriptions"
           description="Recurring invoice templates will appear here."
+          action={{ label: 'New Subscription', onClick: () => { resetSubscriptionForm(); setOpen(true); } }}
         />
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) resetSubscriptionForm(); }}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>{editingSubscriptionId ? 'Edit' : 'New'} Recurring Invoice</DialogTitle>

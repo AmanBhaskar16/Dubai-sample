@@ -25,6 +25,8 @@ const methods = ['CASH', 'BANK_TRANSFER', 'UPI', 'CREDIT_CARD', 'CHEQUE', 'ONLIN
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
+  const [draftInvoices, setDraftInvoices] = useState<SalesInvoice[]>([]);
+  const [draftCount, setDraftCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,9 +44,11 @@ export default function PaymentsPage() {
   const fetchAll = async () => {
     setIsLoading(true);
     try {
-      const [payRes, invRes] = await Promise.all([
+      const [payRes, invRes, draftRes] = await Promise.all([
         api.get('/invoicing/payments', { params: { page, limit } }),
-        api.get('/invoicing/sales-invoices', { params: { limit: 200 } }),
+        // Server-side filter: only submitted/partially paid invoices with a balance.
+        api.get('/invoicing/sales-invoices', { params: { limit: 500, status: 'OPEN' } }),
+        api.get('/invoicing/sales-invoices', { params: { limit: 20, status: 'DRAFT' } }),
       ]);
       setPayments(payRes.data?.data?.items || []);
       setTotal(payRes.data?.data?.total || 0);
@@ -52,9 +56,11 @@ export default function PaymentsPage() {
       setInvoices(
         items.filter((i: SalesInvoice) => {
           const outstanding = Number(i.outstandingAmount ?? Number(i.total || 0) - Number(i.amountPaid || 0));
-          return !['DRAFT', 'CANCELLED', 'PAID'].includes(i.status) && outstanding > 0;
+          return ['SUBMITTED', 'PARTIAL'].includes(i.status) && outstanding > 0;
         })
       );
+      setDraftInvoices(draftRes.data?.data?.items || []);
+      setDraftCount(draftRes.data?.data?.total || 0);
     } catch (err: any) {
       showApiError(err, 'Failed to load payments and pending invoices');
     } finally {
@@ -97,13 +103,7 @@ export default function PaymentsPage() {
       await api.post('/invoicing/payments', { ...form, amount: numAmount, type: 'RECEIVED' });
       showApiSuccess('Payment recorded successfully');
       setShowModal(false);
-      setForm({
-        invoiceId: '',
-        amount: '',
-        method: 'BANK_TRANSFER',
-        date: new Date().toISOString().split('T')[0],
-        reference: '',
-      });
+      resetForm();
       fetchAll();
     } catch (err: any) {
       showApiError(err, 'Failed to record payment');
@@ -126,10 +126,31 @@ export default function PaymentsPage() {
         <span className="font-semibold text-green-700">{formatCurrency(p.amount, p.currency)}</span>
       ),
     },
+    {
+      key: 'invoice',
+      header: 'Invoice',
+      render: (p: Payment) => (p.invoiceId ? (
+        <Link className="text-[#1674c4] hover:underline" href={`/invoicing/sales-invoices/${p.invoiceId}`} onClick={(event) => event.stopPropagation()}>
+          {p.invoice?.invoiceNo || 'Invoice'}
+        </Link>
+      ) : '—'),
+    },
+    { key: 'customer', header: 'Customer', render: (p: Payment) => p.customer?.name || '—' },
     { key: 'method', header: 'Method', render: (p: Payment) => <StatusBadge status={p.method} /> },
-    { key: 'type', header: 'Type', render: (p: Payment) => <StatusBadge status={p.type} /> },
+    { key: 'status', header: 'Status', render: (p: Payment) => <StatusBadge status={p.status || 'POSTED'} /> },
     { key: 'reference', header: 'Reference', render: (p: Payment) => p.reference || '—' },
   ];
+
+  const resetForm = () => setForm({
+    invoiceId: '',
+    amount: '',
+    method: 'BANK_TRANSFER',
+    date: new Date().toISOString().split('T')[0],
+    reference: '',
+  });
+  const selectedInvoice = invoices.find((i) => i.id === form.invoiceId);
+  const selectedDue = selectedInvoice ? Number(selectedInvoice.outstandingAmount ?? 0) : 0;
+  const enteredAmount = Number(form.amount || 0);
 
   return (
     <div>
@@ -147,7 +168,7 @@ export default function PaymentsPage() {
         />
       ) : (
         <>
-          <DataTable columns={columns} data={payments} isLoading={isLoading} />
+          <DataTable columns={columns} data={payments} isLoading={isLoading} onRowClick={(p: Payment) => { window.location.href = `/invoicing/payments/${p.id}`; }} />
           {total > limit && (
             <Pagination
               page={page}
@@ -159,17 +180,17 @@ export default function PaymentsPage() {
           )}
         </>
       )}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      <Dialog open={showModal} onOpenChange={(open) => { setShowModal(open); if (!open) resetForm(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
           </DialogHeader>
 
-          {invoices.length === 0 && !isLoading && (
+          {invoices.length === 0 && !isLoading && draftCount === 0 && (
             <div className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
-                <span>No pending or unpaid sales invoices found. Create and submit an invoice first.</span>
+                <span>No submitted invoices with an outstanding balance. Create and submit an invoice first.</span>
               </div>
               <Link
                 href="/invoicing/sales-invoices/new"
@@ -177,6 +198,28 @@ export default function PaymentsPage() {
               >
                 Create Invoice <ArrowUpRight className="h-3 w-3" />
               </Link>
+            </div>
+          )}
+          {draftCount > 0 && !isLoading && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                <span>
+                  {draftCount} draft invoice{draftCount === 1 ? ' is' : 's are'} not listed. Submit the invoice first to receive payment against it:
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 pl-6">
+                {draftInvoices.slice(0, 6).map((draft) => (
+                  <Link
+                    key={draft.id}
+                    href={`/invoicing/sales-invoices/${draft.id}`}
+                    className="inline-flex items-center gap-0.5 font-semibold text-amber-900 underline hover:text-amber-700"
+                  >
+                    Submit {draft.invoiceNo} <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                ))}
+                {draftCount > 6 && <Link href="/invoicing/sales-invoices" className="underline">View all drafts</Link>}
+              </div>
             </div>
           )}
 
@@ -224,6 +267,15 @@ export default function PaymentsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                   required
                 />
+                {selectedInvoice && enteredAmount > 0 && (
+                  <p className={enteredAmount > selectedDue + 0.005 ? 'text-xs text-[#c3423f]' : 'text-xs text-[#6b7280]'}>
+                    {enteredAmount > selectedDue + 0.005
+                      ? 'Overpayment: use a Payment Entry to keep the excess as an advance.'
+                      : Math.abs(enteredAmount - selectedDue) <= 0.005
+                        ? 'Exact payment: invoice becomes Paid.'
+                        : `Partial: ${formatCurrency(selectedDue - enteredAmount, selectedInvoice.currency)} remains.`}
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Method *</Label>
