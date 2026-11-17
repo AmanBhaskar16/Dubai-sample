@@ -264,7 +264,7 @@ export default function SalesInvoiceDetailPage() {
 
   return (
     <div className={isCancelled(invoice.status) ? 'opacity-75' : ''}>
-      <div className="sticky top-[-12px] z-20 -mx-4 mb-4 border-b border-[#dfe3e8] bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="sticky top-[0px] z-20 -mx-4 mb-4 border-b border-[#dfe3e8] bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <Button variant="ghost" size="sm" asChild className="mb-1 -ml-2">
@@ -304,6 +304,9 @@ export default function SalesInvoiceDetailPage() {
           )}
           {!isDraft(invoice.status) && !isCancelled(invoice.status) && (
             <Button variant="outline" asChild><Link href={`/invoicing/credit-notes?invoiceId=${invoice.id}`}>Credit Note</Link></Button>
+          )}
+          {!isCancelled(invoice.status) && (
+            <Button variant="outline" asChild><Link href={`/invoicing/shipping-invoices/new?fromSalesInvoice=${invoice.id}`}>Shipping Invoice</Link></Button>
           )}
           {canCancel && (
             <Button variant="destructive" onClick={() => setCancelOpen(true)}><Ban className="mr-2 h-4 w-4" />{isDraft(invoice.status) ? 'Cancel Draft' : 'Cancel Invoice'}</Button>
