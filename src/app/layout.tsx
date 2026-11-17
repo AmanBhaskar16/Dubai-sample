@@ -57,7 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             />
           </AuthProvider>
         </WorkspaceProvider>
-        <Chatbot />
+        {/* <Chatbot /> */}
       </body>
     </html>
   );
