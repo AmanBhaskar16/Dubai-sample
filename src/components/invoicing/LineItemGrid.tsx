@@ -212,7 +212,6 @@ export function LineItemGrid({ value, onChange, currency = 'USD', readOnly = fal
                       ensureTrailingRow(index, text);
                       setActiveLookup(index);
                     }}
-                    placeholder="Item code"
                   />
                   {activeLookup === index && (queries[index]?.trim() ? (
                     options.length > 0 ? (
@@ -274,7 +273,7 @@ export function LineItemGrid({ value, onChange, currency = 'USD', readOnly = fal
                     }}
                   >
                     <SelectTrigger className="h-7 border-transparent bg-transparent shadow-none hover:border-[#d9d4cc] focus-visible:bg-white">
-                      <SelectValue placeholder="Manual" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="MANUAL">Manual tax %</SelectItem>

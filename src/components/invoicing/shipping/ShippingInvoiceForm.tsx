@@ -129,14 +129,14 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
-const ITEM_COLUMNS: Array<{ key: keyof ItemRow; label: string; width: string; type?: string; placeholder?: string }> = [
+const ITEM_COLUMNS: Array<{ key: keyof ItemRow; label: string; width: string; type?: string }> = [
   { key: 'itemCode', label: 'Item code *', width: 'w-32' },
   { key: 'description', label: 'Description *', width: 'w-56' },
   { key: 'qty', label: 'Qty *', width: 'w-20', type: 'number' },
-  { key: 'serialNo', label: 'Serial no.', width: 'w-28', placeholder: 'N/A if empty' },
+  { key: 'serialNo', label: 'Serial no.', width: 'w-28' },
   { key: 'unitPrice', label: 'Unit price *', width: 'w-28', type: 'number' },
   { key: 'hsCode', label: 'HS code *', width: 'w-28' },
-  { key: 'eccn', label: 'ECCN', width: 'w-24', placeholder: 'N/A if empty' },
+  { key: 'eccn', label: 'ECCN', width: 'w-24' },
   { key: 'coo', label: 'COO *', width: 'w-20' },
   { key: 'inboundRef', label: 'Inbound ref *', width: 'w-36' },
   { key: 'grossWeightKg', label: 'Gross wt (kg) *', width: 'w-28', type: 'number' },
@@ -151,8 +151,8 @@ export function ShippingInvoiceForm({ value, onChange, companyLogo, companyHeade
   const [logoError, setLogoError] = useState('');
   const set = <K extends keyof ShippingFormState>(key: K, next: ShippingFormState[K]) => onChange({ ...value, [key]: next });
   const calc = useMemo(() => computeShipping(toPayload(value) as unknown as ShippingInvoiceInput), [value]);
-  const input = (key: keyof ShippingFormState, placeholder?: string) => (
-    <Input value={String(value[key])} placeholder={placeholder} onChange={event => set(key, event.target.value as never)} />
+  const input = (key: keyof ShippingFormState) => (
+    <Input value={String(value[key])} onChange={event => set(key, event.target.value as never)} />
   );
 
   const updateItem = (index: number, key: keyof ItemRow, next: string) => set('items', value.items.map((row, i) => (i === index ? { ...row, [key]: next } : row)));
@@ -214,12 +214,12 @@ export function ShippingInvoiceForm({ value, onChange, companyLogo, companyHeade
         <Card>
           <CardHeader><CardTitle>Routing &amp; Goods</CardTitle></CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
-            <Field label="From (location) *">{input('fromLocation', 'e.g. port / free zone')}</Field>
+            <Field label="From (location) *">{input('fromLocation')}</Field>
             <Field label="To (country) *">{input('toCountry')}</Field>
-            <Field label="Type (Delivery Advice) *" hint="Package type code shown in the Type column">{input('cargoType', 'e.g. a package code')}</Field>
-            <Field label="Package unit *" hint='Printed as "<total packages> <unit>"'>{input('packageType', 'e.g. pallet / carton')}</Field>
+            <Field label="Type (Delivery Advice) *" hint="Package type code shown in the Type column">{input('cargoType')}</Field>
+            <Field label="Package unit *" hint='Printed as "<total packages> <unit>"'>{input('packageType')}</Field>
             <div className="md:col-span-2"><Field label="Description of goods *">{input('goodsDescription')}</Field></div>
-            <Field label="HS code (Delivery Advice)">{input('hsCodeLabel', 'e.g. a code or reference text')}</Field>
+            <Field label="HS code (Delivery Advice)">{input('hsCodeLabel')}</Field>
             <Field label="Marks & numbers">{input('marksAndNumbers')}</Field>
             <div className="md:col-span-2"><Field label="Carrier's agent">{input('carrierAgent')}</Field></div>
           </CardContent>
@@ -271,7 +271,7 @@ export function ShippingInvoiceForm({ value, onChange, companyLogo, companyHeade
                     {ITEM_COLUMNS.map(column => (
                       <td key={column.key} className="px-1 py-1">
                         <Input className={`h-8 ${column.width}`} type={column.type || 'text'} min={column.type ? '0' : undefined} step={column.type ? 'any' : undefined}
-                          placeholder={column.placeholder} value={item[column.key]} onChange={event => updateItem(index, column.key, event.target.value)} />
+                          value={item[column.key]} onChange={event => updateItem(index, column.key, event.target.value)} />
                       </td>
                     ))}
                     <td className="whitespace-nowrap px-2 py-1 text-right font-medium">{formatCurrencyValue(value.currency, calc.lines[index]?.lineTotal || 0)}</td>
@@ -346,7 +346,7 @@ export function ShippingInvoiceForm({ value, onChange, companyLogo, companyHeade
         <CardHeader><CardTitle>Branding for this invoice (optional)</CardTitle></CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <Field label="Header text override" hint={companyHeaderText ? `Company profile: "${companyHeaderText}"` : 'No header text set in the company profile'}>
-            {input('headerTextOverride', 'Leave empty to use the company profile')}
+            {input('headerTextOverride')}
           </Field>
           <Field label="Logo override" hint={companyLogo ? 'Leave empty to use the company profile logo' : 'No logo set in the company profile'}>
             <div className="flex items-center gap-3">

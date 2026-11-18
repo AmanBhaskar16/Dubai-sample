@@ -213,7 +213,6 @@ export default function NewSalesInvoicePage() {
               <Label>Notes</Label>
               <Input
                 value={form.notes}
-                placeholder="Internal notes or customer remarks"
                 onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
               />
             </div>
@@ -221,7 +220,6 @@ export default function NewSalesInvoicePage() {
               <Label>Terms</Label>
               <Input
                 value={form.terms}
-                placeholder="Payment terms, delivery terms, bank instructions"
                 onChange={(event) => setForm((prev) => ({ ...prev, terms: event.target.value }))}
               />
             </div>
@@ -235,17 +233,17 @@ export default function NewSalesInvoicePage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <InvoiceField label="Shipment / Booking Reference" value={form.shipmentReference} placeholder="Shipment or booking reference" onChange={(shipmentReference) => setForm((prev) => ({ ...prev, shipmentReference }))} />
-            <InvoiceField label="Customer PO No." value={form.customerPoNo} placeholder="Customer purchase order" onChange={(customerPoNo) => setForm((prev) => ({ ...prev, customerPoNo }))} />
-            <InvoiceField label="Other Reference" value={form.reference} placeholder="Reference number" onChange={(reference) => setForm((prev) => ({ ...prev, reference }))} />
-            <InvoiceField label="Country of Origin" value={form.countryOfOrigin} placeholder="Country of origin" onChange={(countryOfOrigin) => setForm((prev) => ({ ...prev, countryOfOrigin }))} />
-            <InvoiceField label="Country of Destination" value={form.countryOfDestination} placeholder="Destination country" onChange={(countryOfDestination) => setForm((prev) => ({ ...prev, countryOfDestination }))} />
-            <InvoiceField label="Port of Loading" value={form.portOfLoading} placeholder="Port of loading" onChange={(portOfLoading) => setForm((prev) => ({ ...prev, portOfLoading }))} />
-            <InvoiceField label="Port of Discharge" value={form.portOfDischarge} placeholder="Port of discharge" onChange={(portOfDischarge) => setForm((prev) => ({ ...prev, portOfDischarge }))} />
-            <InvoiceField label="Incoterms" value={form.incoterms} placeholder="e.g. FOB, CIF, EXW" onChange={(incoterms) => setForm((prev) => ({ ...prev, incoterms }))} />
-            <InvoiceField label="Packages / Cartons" value={form.packageCount} type="number" placeholder="Number of packages" onChange={(packageCount) => setForm((prev) => ({ ...prev, packageCount }))} />
-            <InvoiceField label="Gross Weight (kg)" value={form.grossWeight} type="number" placeholder="Gross weight" onChange={(grossWeight) => setForm((prev) => ({ ...prev, grossWeight }))} />
-            <InvoiceField label="Net Weight (kg)" value={form.netWeight} type="number" placeholder="Net weight" onChange={(netWeight) => setForm((prev) => ({ ...prev, netWeight }))} />
+            <InvoiceField label="Shipment / Booking Reference" value={form.shipmentReference} onChange={(shipmentReference) => setForm((prev) => ({ ...prev, shipmentReference }))} />
+            <InvoiceField label="Customer PO No." value={form.customerPoNo} onChange={(customerPoNo) => setForm((prev) => ({ ...prev, customerPoNo }))} />
+            <InvoiceField label="Other Reference" value={form.reference} onChange={(reference) => setForm((prev) => ({ ...prev, reference }))} />
+            <InvoiceField label="Country of Origin" value={form.countryOfOrigin} onChange={(countryOfOrigin) => setForm((prev) => ({ ...prev, countryOfOrigin }))} />
+            <InvoiceField label="Country of Destination" value={form.countryOfDestination} onChange={(countryOfDestination) => setForm((prev) => ({ ...prev, countryOfDestination }))} />
+            <InvoiceField label="Port of Loading" value={form.portOfLoading} onChange={(portOfLoading) => setForm((prev) => ({ ...prev, portOfLoading }))} />
+            <InvoiceField label="Port of Discharge" value={form.portOfDischarge} onChange={(portOfDischarge) => setForm((prev) => ({ ...prev, portOfDischarge }))} />
+            <InvoiceField label="Incoterms" value={form.incoterms} onChange={(incoterms) => setForm((prev) => ({ ...prev, incoterms }))} />
+            <InvoiceField label="Packages / Cartons" value={form.packageCount} type="number" onChange={(packageCount) => setForm((prev) => ({ ...prev, packageCount }))} />
+            <InvoiceField label="Gross Weight (kg)" value={form.grossWeight} type="number" onChange={(grossWeight) => setForm((prev) => ({ ...prev, grossWeight }))} />
+            <InvoiceField label="Net Weight (kg)" value={form.netWeight} type="number" onChange={(netWeight) => setForm((prev) => ({ ...prev, netWeight }))} />
           </div>
         </CardContent>
       </Card>
@@ -267,11 +265,11 @@ export default function NewSalesInvoicePage() {
   );
 }
 
-function InvoiceField({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
+function InvoiceField({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Input type={type} min={type === 'number' ? '0' : undefined} step={type === 'number' ? '0.01' : undefined} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <Input type={type} min={type === 'number' ? '0' : undefined} step={type === 'number' ? '0.01' : undefined} value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }
