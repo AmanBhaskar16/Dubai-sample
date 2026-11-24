@@ -55,7 +55,7 @@ export const shippingInvoiceSchema = z.object({
   hsCodeLabel: text(120),
   marksAndNumbers: text(300),
   cargoType: required('Type', 30),
-  packageType: required('Package type', 30),
+  packageType: required('Package type', 30).regex(/^[a-z0-9]+$/i, 'Package type must contain only letters and numbers').regex(/[a-z]/i, 'Package type must contain at least one letter'),
   carrierAgent: text(200),
   headerTextOverride: text(200),
   logoOverride: logoDataUrl,

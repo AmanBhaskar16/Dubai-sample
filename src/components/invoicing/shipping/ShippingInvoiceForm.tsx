@@ -51,6 +51,7 @@ type Loose = Partial<Omit<ShippingInvoiceInput, 'items' | 'packages'>> & {
   packages?: Array<Partial<Record<keyof PackageRow, string | number>>>;
 };
 const str = (value: unknown) => (value === undefined || value === null ? '' : String(value));
+const packageUnit = (value: unknown) => str(value).replace(/[^a-z0-9]/gi, '');
 
 /** API document (or prefill payload) -> form state. */
 export function toFormState(doc: Loose): ShippingFormState {
@@ -62,7 +63,7 @@ export function toFormState(doc: Loose): ShippingFormState {
     shipperCompany: str(doc.shipper?.companyName), shipperAddress: (doc.shipper?.addressLines || []).join('\n'), shipperContact: str(doc.shipper?.contactName), shipperMobile: str(doc.shipper?.mobile),
     shipToCompany: str(doc.shipTo?.companyName), shipToAddress: (doc.shipTo?.addressLines || []).join('\n'), shipToCountry: str(doc.shipTo?.country), shipToContact: str(doc.shipTo?.contactPerson), shipToMobile: str(doc.shipTo?.mobile), shipToEmail: str(doc.shipTo?.email),
     fromLocation: str(doc.fromLocation), toCountry: str(doc.toCountry), carrierAgent: str(doc.carrierAgent), marksAndNumbers: str(doc.marksAndNumbers),
-    cargoType: str(doc.cargoType), packageType: str(doc.packageType), goodsDescription: str(doc.goodsDescription), hsCodeLabel: str(doc.hsCodeLabel),
+    cargoType: str(doc.cargoType), packageType: packageUnit(doc.packageType), goodsDescription: str(doc.goodsDescription), hsCodeLabel: str(doc.hsCodeLabel),
     transactionType: str(doc.transactionType), paymentMethod: str(doc.paymentMethod), refAcNo: str(doc.refAcNo),
     headerTextOverride: str(doc.headerTextOverride), logoOverride: str(doc.logoOverride), salesInvoiceId: str(doc.salesInvoiceId),
     items: doc.items?.length ? doc.items.map(item => ({ ...emptyItem(), ...Object.fromEntries(Object.entries(item).map(([key, value]) => [key, str(value)])) })) as ItemRow[] : [emptyItem()],
@@ -98,6 +99,7 @@ export function validateShippingForm(form: ShippingFormState): string[] {
   need(form.fromLocation, 'From (location)'); need(form.toCountry, 'To (country)');
   need(form.transactionType, 'Transaction type'); need(form.goodsDescription, 'Description of goods');
   need(form.cargoType, 'Type'); need(form.packageType, 'Package type');
+  if (form.packageType && !/[a-z]/i.test(form.packageType)) errors.push('Package unit must contain at least one letter');
   if (form.shipToEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.shipToEmail)) errors.push('Ship-to email is not valid');
   if (!form.items.length) errors.push('Add at least one item');
   form.items.forEach((item, index) => {
@@ -217,7 +219,9 @@ export function ShippingInvoiceForm({ value, onChange, companyLogo, companyHeade
             <Field label="From (location) *">{input('fromLocation')}</Field>
             <Field label="To (country) *">{input('toCountry')}</Field>
             <Field label="Type (Delivery Advice) *" hint="Package type code shown in the Type column">{input('cargoType')}</Field>
-            <Field label="Package unit *" hint='Printed as "<total packages> <unit>"'>{input('packageType')}</Field>
+            <Field label="Package unit *" hint='Printed as "<total packages> <unit>"'>
+              <Input value={value.packageType} onChange={event => set('packageType', packageUnit(event.target.value))} />
+            </Field>
             <div className="md:col-span-2"><Field label="Description of goods *">{input('goodsDescription')}</Field></div>
             <Field label="HS code (Delivery Advice)">{input('hsCodeLabel')}</Field>
             <Field label="Marks & numbers">{input('marksAndNumbers')}</Field>
@@ -335,7 +339,7 @@ export function ShippingInvoiceForm({ value, onChange, companyLogo, companyHeade
             <Summary label="Total value" value={formatCurrencyValue(value.currency, calc.totals.value)} strong />
             <Summary label="Total weight" value={`${formatQuantity(calc.totals.weightKg)} KGS`} />
             <Summary label="Total packages" value={`${formatQuantity(calc.totals.packages)} ${value.packageType}`.trim()} />
-            <Summary label="Total CBM" value={`${formatCbm(calc.totals.cbm, 4)} (packing list: ${formatCbm(calc.totals.cbm, 2)})`} />
+            <Summary label="Total CBM" value={formatCbm(calc.totals.cbm, 4)} />
             <Summary label="B/E Ref Nos." value={calc.beRefNos || '-'} />
             <Summary label="Country of origin" value={calc.countryOfOrigin || '-'} />
           </CardContent>
