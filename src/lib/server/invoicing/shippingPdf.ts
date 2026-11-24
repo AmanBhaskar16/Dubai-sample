@@ -107,7 +107,7 @@ function checkbox(pdf: PdfWriter, x: number, y: number, w: number, h: number, se
 function page1({ pdf, doc, calc, logo }: Ctx, headerText: string) {
   const B = 0.72;
   pdf.addPage(A4_W, A4_H);
-  if (logo) pdf.drawImageFit(logo, 56.19, 722.52, 82.52, 55.82);
+  if (logo) pdf.drawImageFit(logo, 56.19, 710.52, 132, 67.82);
   if (headerText) {
     const fit = fitLines(pdf, headerText, H, 6.48, 230, 3);
     fit.lines.forEach((line, index) => pdf.text(52.34, 714.82 - index * fit.size * 1.15, line, H, fit.size));
@@ -276,7 +276,7 @@ const P2_LINE_GAP = 9.36;
 function page2Top(ctx: Ctx) {
   const { pdf, logo } = ctx;
   pdf.addPage(P2_W, P2_H);
-  if (logo) pdf.drawImageFit(logo, 23.31, 513.53, 79.11, 52.44);
+  if (logo) pdf.drawImageFit(logo, 23.31, 501.53, 126, 68.44);
   pdf.text(363.31, 526.18, 'INVOICE / PACKING LIST', CB, 10.92);
 }
 
@@ -317,33 +317,33 @@ function page2(ctx: Ctx) {
   ], 219);
   const boxLines = Math.max(6, shipperLines.length, shipToLines.length);
   const grow = (boxLines - 6) * 11.88;
-  const shipperY = [481.9, 469.99, 458.11, 446.23, 434.59, 422.71];
-  const shipToY = [482.26, 469.87, 458.83, 446.23, 434.59, 422.71];
-  pdf.fillRect(9.98, 490.9, 367.73, 14.4, GREY);
-  pdf.hline(10.7, 378.31, 504.58, 1.44);
-  pdf.hline(10.7, 378.31, 490.3, 1.44);
-  pdf.text(11.9, 495.22, 'SHIPPER', CB, 10.92);
-  pdf.text(155.9, 495.22, 'SHIP TO', CB, 10.92);
+  const shipperY = [461.9, 449.99, 438.11, 426.23, 414.59, 402.71];
+  const shipToY = [462.26, 449.87, 438.83, 426.23, 414.59, 402.71];
+  pdf.fillRect(9.98, 470.9, 367.73, 14.4, GREY);
+  pdf.hline(10.7, 378.31, 484.58, 1.44);
+  pdf.hline(10.7, 378.31, 470.3, 1.44);
+  pdf.text(11.9, 475.22, 'SHIPPER', CB, 10.92);
+  pdf.text(155.9, 475.22, 'SHIP TO', CB, 10.92);
   shipperLines.forEach((line, index) => pdf.text(11.66, shipperY[index] ?? 422.71 - (index - 5) * 11.88, line, C, 9.36));
   shipToLines.forEach((line, index) => pdf.text(155.66, shipToY[index] ?? 422.71 - (index - 5) * 11.88, line, C, 9.36));
 
   // Reference block
-  pdf.text(406.51, 495.22, 'Invoice / Ref No.', CB, 10.92);
-  pdf.text(489.67, 495.46, doc.invoiceRefNo, C, fitSize(pdf, doc.invoiceRefNo, C, 9.36, 335));
-  pdf.text(406.27, 482.26, 'Date', CB, 9.36);
-  pdf.text(489.67, 481.9, formatDateShort(doc.date), C, 9.36);
-  pdf.text(406.27, 469.99, 'Order Number', CB, 9.36);
-  if (doc.orderNumber) pdf.text(489.67, 469.99, doc.orderNumber, C, fitSize(pdf, doc.orderNumber, C, 9.36, 335));
+  pdf.text(406.51, 475.22, 'Invoice / Ref No.', CB, 10.92);
+  pdf.text(489.67, 475.46, doc.invoiceRefNo, C, fitSize(pdf, doc.invoiceRefNo, C, 9.36, 335));
+  pdf.text(406.27, 462.26, 'Date', CB, 9.36);
+  pdf.text(489.67, 461.9, formatDateShort(doc.date), C, 9.36);
+  pdf.text(406.27, 449.99, 'Order Number', CB, 9.36);
+  if (doc.orderNumber) pdf.text(489.67, 449.99, doc.orderNumber, C, fitSize(pdf, doc.orderNumber, C, 9.36, 335));
 
-  let headerTop = 418.99 - grow;
-  let pageTop = 506.01; // left frame line starts at the top of the shipper box on the first page
+  let headerTop = 398.99 - grow;
+  let pageTop = 486.01; // left frame line starts at the top of the shipper box on the first page
   const drawFrameSegment = (to: number) => {
     pdf.vline(9.26, to, pageTop, 1.44);
     pdf.vline(824.28, to, headerTop, 1.44);
   };
   // The shipper box sides belong to the first page frame.
-  pdf.vline(153.26, headerTop, 504.57, 1.44);
-  pdf.vline(376.87, headerTop, 504.57, 1.44);
+  pdf.vline(153.26, headerTop, 484.57, 1.44);
+  pdf.vline(376.87, headerTop, 484.57, 1.44);
   let y = itemsHeader(ctx, headerTop);
 
   const rowCells = (line: (typeof calc.lines)[number], index: number) => [
@@ -360,7 +360,7 @@ function page2(ctx: Ctx) {
     if (y - height - reserve < P2_BOTTOM) {
       drawFrameSegment(y);
       page2Top(ctx);
-      headerTop = 505;
+      headerTop = 485;
       pageTop = headerTop;
       y = itemsHeader(ctx, headerTop);
       first = true;
@@ -475,35 +475,35 @@ const P3_BOTTOM = 40;
 function page3Header(ctx: Ctx) {
   const { pdf, doc, logo } = ctx;
   pdf.addPage(A4_W, A4_H);
-  if (logo) pdf.drawImageFit(logo, 65.09, 745.88, 54.79, 34.89);
-  pdf.text(52.46, 728.26, 'DETAILED COMMODITY CLASSIFICATION  FORM', CB, 8.04);
-  pdf.text(52.46, 718.06, 'FOR STATISTICAL USE', CB, 8.04);
-  pdf.text(415.18, 718.06, 'DATE', CB, 8.04);
+  if (logo) pdf.drawImageFit(logo, 65.09, 724.88, 108, 55.89);
+  pdf.text(52.46, 713.26, 'DETAILED COMMODITY CLASSIFICATION  FORM', CB, 8.04);
+  pdf.text(52.46, 703.06, 'FOR STATISTICAL USE', CB, 8.04);
+  pdf.text(415.18, 703.06, 'DATE', CB, 8.04);
   const date = formatDateShort(doc.date);
-  pdf.text(520.13 - pdf.measure(date, CB, 8.04), 718.06, date, CB, 8.04);
-  pdf.text(52.46, 697.66, 'PORT, Customs & Free Zone Corporation', CB, 8.04);
+  pdf.text(520.13 - pdf.measure(date, CB, 8.04), 703.06, date, CB, 8.04);
+  pdf.text(52.46, 682.66, 'PORT, Customs & Free Zone Corporation', CB, 8.04);
   // Table header
-  pdf.hline(51.62, 522.48, 683.74, 1.32);
-  pdf.hline(51.62, 522.48, 649.99, 1.32);
-  pdf.text(58.94, 664.63, 'SL No', CB, 8.04);
-  pdf.text(90.14, 669.91, 'HARMONISED ', CB, 8.04);
-  pdf.text(87.14, 659.47, 'PRODUCT CODE', CB, 8.04);
-  pdf.text(206.45, 664.63, 'DESCRIPTION', CB, 8.04);
-  pdf.text(317.71, 669.91, 'COUNTRY OF ', CB, 8.04);
-  pdf.text(327.31, 659.47, 'ORIGIN', CB, 8.04);
-  pdf.text(364.66, 664.63, 'QUANTITY ', CB, 8.04);
-  pdf.text(412.42, 675.07, 'GROSS ', CB, 8.04);
-  pdf.text(404.14, 664.63, 'WEIGHT (IN ', CB, 8.04);
-  pdf.text(415.9, 654.19, 'KGS)', CB, 8.04);
+  pdf.hline(51.62, 522.48, 668.74, 1.32);
+  pdf.hline(51.62, 522.48, 634.99, 1.32);
+  pdf.text(58.94, 649.63, 'SL No', CB, 8.04);
+  pdf.text(90.14, 654.91, 'HARMONISED ', CB, 8.04);
+  pdf.text(87.14, 644.47, 'PRODUCT CODE', CB, 8.04);
+  pdf.text(206.45, 649.63, 'DESCRIPTION', CB, 8.04);
+  pdf.text(317.71, 654.91, 'COUNTRY OF ', CB, 8.04);
+  pdf.text(327.31, 644.47, 'ORIGIN', CB, 8.04);
+  pdf.text(364.66, 649.63, 'QUANTITY ', CB, 8.04);
+  pdf.text(412.42, 660.07, 'GROSS ', CB, 8.04);
+  pdf.text(404.14, 649.63, 'WEIGHT (IN ', CB, 8.04);
+  pdf.text(415.9, 639.19, 'KGS)', CB, 8.04);
   const priceLabel = `TOTAL PRICE ${doc.currency}`;
-  pdf.text(484.17 - pdf.measure(priceLabel, CB, 8.04) / 2, 664.63, priceLabel, CB, fitSize(pdf, priceLabel, CB, 8.04, 73));
-  return 649.99;
+  pdf.text(484.17 - pdf.measure(priceLabel, CB, 8.04) / 2, 649.63, priceLabel, CB, fitSize(pdf, priceLabel, CB, 8.04, 73));
+  return 634.99;
 }
 
 function page3(ctx: Ctx) {
   const { pdf, doc, calc } = ctx;
   let y = page3Header(ctx);
-  let tableTop = 683.74;
+  let tableTop = 668.74;
   const frame = (bottom: number) => {
     pdf.vline(50.3, bottom, tableTop + 1.32, 1.32);
     for (const x of P3_COLS.slice(1, -1)) pdf.vline(x, bottom + 1.32, tableTop - 0.01, 0.6);
@@ -521,7 +521,7 @@ function page3(ctx: Ctx) {
       frame(y);
       pdf.hline(51.62, 522.48, y, 1.32);
       y = page3Header(ctx);
-      tableTop = 683.74;
+      tableTop = 668.74;
       first = true;
     }
     const height = (first ? P3_ROW_FIRST : P3_ROW) + (lineCount - 1) * P3_GAP;

@@ -663,6 +663,11 @@ const FEATURE_META: Record<string, { title: string; description: string }> = {
       <PageHeader
         title={currentMeta.title}
         description={currentMeta.description}
+        action={activeTab === 'po-receiving' ? {
+          label: 'Add Purchase Order',
+          onClick: () => router.push('/procurement/purchase-orders'),
+          icon: Plus,
+        } : undefined}
       />
 
       {/* ========================================================================= */}
